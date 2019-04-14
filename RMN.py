@@ -194,8 +194,8 @@ def find_network(triplet_df, L):
     network = network_triplets.iloc[:,[0,2]]
     network = network.rename(columns={"Om": "Oc", "Ot": "Ot"})
     network = network.append(network_triplets.iloc[:,[1,2]])
-    lm = ["red"]*len(network_triplets)
-    lc = ["blue"]*len(network_triplets)
+    lm = ["blue"]*len(network_triplets)
+    lc = ["red"]*len(network_triplets)
     lm.extend(lc)
     network["Interaction"] = lm
     network = network.drop_duplicates()
