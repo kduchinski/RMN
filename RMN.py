@@ -27,6 +27,7 @@ import math
 import networkx as nx
 import matplotlib.pyplot as plt
 import sys
+import csv
 
 
 # In[3]:
@@ -38,10 +39,13 @@ def format_file(file, oligo = "False"):
         df = format_oligo(file)
     else:
         df = pd.read_table(file, sep = ",")
+        df = df.drop(["numOtus", "label"], axis = 1)
         #df = df.iloc[:50,3:].transpose()
         #df.insert(0, "OTU", list(df.index))
         df.index = range(0, len(df.index))
         #df.iloc[:,1:] = df.iloc[:,1:]/100
+        df = df.transpose()
+        df = df.reset_index(drop = True)
     print("end format_file")
     print(df)
     return df
@@ -67,11 +71,11 @@ def format_oligo(file):
 
 
 def pairs(df):
-    p = pd.DataFrame(list(permutations(list(df.index), r=2)))
+    p = pd.DataFrame(list(permutations(list(df.index[1:]), r=2)))
     p = p.rename({0: "Om", 1: "Oc"}, axis = "columns")
     return p
 def triplets(df):
-    t = pd.DataFrame(list(permutations(list(df.index), r=3)))
+    t = pd.DataFrame(list(permutations(list(df.index[1:]), r=3)))
     t = t.rename({0: "Om", 1: "Oc", 2: "Ot"}, axis = "columns")
     return t
 
@@ -106,8 +110,8 @@ def predict_SRP(df):
     for row in range(0, len(p.index)):
         m_index = p.iloc[row, 0]
         c_index = p.iloc[row, 1]
-        m_list = df.iloc[m_index, 1:]
-        c_list = df.iloc[c_index, 1:]
+        m_list = df.iloc[m_index, :]
+        c_list = df.iloc[c_index, :]
         exp_SRP = list()
         for i in range(0, len(m_list)):
             exp_SRP.append(SRP_model(m_list[i], c_list[i]))
@@ -125,7 +129,7 @@ def predict_SRP(df):
 def lack_of_fit(df, triplet_df, skip = -1):
     print("start lack_of_fit")
     exp = predict_SRP(df)
-    obs = df.iloc[list(triplet_df["Ot"]),1:].reset_index(drop=True)
+    obs = df.iloc[list(triplet_df["Ot"]),:].reset_index(drop=True)
     
     if(skip != -1):
         df = df.drop(df.columns[skip], axis=1)
@@ -139,7 +143,7 @@ def lack_of_fit(df, triplet_df, skip = -1):
     sse_df.columns = list(range(1,len(sse_df.columns)+1))
 
     
-    avg_SRP = df.mean(axis=1)
+    avg_SRP = df.iloc[1:,:]mean(axis=1)
     sqdev_df = obs.subtract(list(avg_SRP[list(triplet_df["Ot"])]), axis=0)**2
 
     
@@ -175,9 +179,9 @@ def test_triplets(df, triplet_df, lof):
     adj = adjust(df, triplet_df, lof)
     triplet_df["Adj"] = adj
     triplet_df["I"] = lof*(1+adj)
-    triplet_df["Om"] = list(df.iloc[triplet_df["Om"], 0])
-    triplet_df["Oc"] = list(df.iloc[triplet_df["Oc"], 0])
-    triplet_df["Ot"] = list(df.iloc[triplet_df["Ot"], 0])
+    #triplet_df["Om"] = list(df.iloc[triplet_df["Om"], 0])
+    #triplet_df["Oc"] = list(df.iloc[triplet_df["Oc"], 0])
+    #triplet_df["Ot"] = list(df.iloc[triplet_df["Ot"], 0])
     print("end test_triplets")
     return triplet_df
 
@@ -206,11 +210,27 @@ def find_network(triplet_df, L):
 # In[18]:
 
 
-def draw_network(network):
+def draw_network(df, design, network):
     print("start draw_network")
+    design = list(csv.DictReader(design), delimiter = '\t')
+    df.iloc[0,:] = df.iloc[0,:].replace(design, regex = True)
+    groups = list(df.iloc[0,:]).unique()
+    groupsums = list()
+    for group in groups:
+        s = df.loc[:, df.iloc[0,:] == group].iloc[1:,:].sum(axis = 1)
+        groupsums.append(s)
+    data = pd.DataFrame(groupsums, columns = list(groups))
     G = nx.from_pandas_edgelist(network, "Oc", "Ot", "Interaction", create_using = nx.DiGraph())
     pos = nx.circular_layout(G)
-
+    color_map = []
+    for node in G:
+        abund = data.iloc[int(node)-1,:]
+        if (abund[0] > 0.01) & (abund[1] > 0.01):
+            color_map.append('#B66DFF')
+        elif (abund[0] > 0.01):
+            color_map.append('#FF6DB6')
+        elif (abund[1] > 0.01):
+            color_map.append('#009292')
     nx.draw(G, pos, with_labels=True, font_weight='bold', node_color='#A0CBE2', node_size = 3000, edge_color=network["Interaction"],
         width=4, edge_cmap=plt.cm.Blues)
     #plt.tight_layout()
@@ -231,7 +251,7 @@ def main(file, L = 3.8, oligo = "False"):
     print("STEP 4 DONE")
     network = find_network(triplet_df, L)
     print("STEP 5 DONE")
-    draw_network(network)
+    draw_network(df, design, network)
     print("STEP 6 DONE")
 
 
@@ -239,5 +259,5 @@ def main(file, L = 3.8, oligo = "False"):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2], sys.argv[3])
+    main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
 
