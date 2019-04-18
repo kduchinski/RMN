@@ -38,7 +38,7 @@ def format_file(file, oligo = "False"):
     if(oligo in ["true", "True", "T", "1"]):
         df = format_oligo(file)
     else:
-        df = pd.read_table(file, sep = ",")
+        df = pd.read_csv(file, sep = "\t")
         df = df.drop(["numOtus", "label"], axis = 1)
         #df = df.iloc[:50,3:].transpose()
         #df.insert(0, "OTU", list(df.index))
@@ -56,13 +56,12 @@ def format_file(file, oligo = "False"):
 def format_oligo(file):
     print("start format_oligo")
     df = pd.read_table(file, sep = "\t")
-    if("numOtus" in df.columns):
-        df = df.drop(["numOtus"], axis = 1)
-    df = df.iloc[:,1:].transpose()
-    #df.apply(pd.to_numeric, errors = 'ignore')
-    df.insert(0, "Oligotype", list(df.index))
+    #if("numOtus" in df.columns):
+    #    df = df.drop(["numOtus"], axis = 1)
+    df = df.transpose()
+    #df.insert(0, "Oligotype", list(df.index))
     df.index = range(0, len(df.index))
-    df.iloc[:,1:] = df.iloc[:,1:]/100
+    df.iloc[1:,:] = df.iloc[1:,:]/100
     print("end format_oligo")
 
     return df
@@ -115,10 +114,10 @@ def predict_SRP(df):
         exp_SRP = list()
         for i in range(0, len(m_list)):
             exp_SRP.append(SRP_model(m_list[i], c_list[i]))
-        for i in range(0, len(df.index)-2):
+        for i in range(0, len(df.index)-3):
             exp_SRP_rows.append(exp_SRP)
     exp_SRP_df = pd.DataFrame(exp_SRP_rows)
-    exp_SRP_df.columns = list(range(1,len(exp_SRP_df.columns)+1))
+    #exp_SRP_df.columns = list(range(1,len(exp_SRP_df.columns)+1))
     print("end predict_SRP")
     return exp_SRP_df
 
@@ -143,7 +142,7 @@ def lack_of_fit(df, triplet_df, skip = -1):
     sse_df.columns = list(range(1,len(sse_df.columns)+1))
 
     
-    avg_SRP = df.iloc[1:,:]mean(axis=1)
+    avg_SRP = df.iloc[1:,:].mean(axis=1)
     sqdev_df = obs.subtract(list(avg_SRP[list(triplet_df["Ot"])]), axis=0)**2
 
     
@@ -192,8 +191,6 @@ def test_triplets(df, triplet_df, lof):
 def find_network(triplet_df, L):
     L = float(L)
     print("start find_network")
-    print(triplet_df)
-    print(triplet_df.loc[(triplet_df["Ld"] >= 0),:])
     network_triplets = triplet_df.loc[(triplet_df["Ld"] >= 0) & (triplet_df["Ld"] <= L),:]
     network = network_triplets.iloc[:,[0,2]]
     network = network.rename(columns={"Om": "Oc", "Ot": "Ot"})
@@ -201,28 +198,31 @@ def find_network(triplet_df, L):
     lm = ["blue"]*len(network_triplets)
     lc = ["red"]*len(network_triplets)
     lm.extend(lc)
-    network["Interaction"] = lm
+    network["color"] = lm
     network = network.drop_duplicates()
+    network = network.rename(columns = {"Oc": "source", "Ot": "target", "color": "color"})
     print("end find_network")
-    print(network)
     return network
 
 # In[18]:
 
 
-def draw_network(df, design, network):
+def draw_network(df, designFile, network):
     print("start draw_network")
-    design = list(csv.DictReader(design), delimiter = '\t')
+    design = pd.read_csv(designFile, sep = "\t")
+    design = dict(zip(design.iloc[:,0], design.iloc[:,1]))
     df.iloc[0,:] = df.iloc[0,:].replace(design, regex = True)
-    groups = list(df.iloc[0,:]).unique()
+    groups = df.iloc[0,:].unique()
     groupsums = list()
     for group in groups:
-        s = df.loc[:, df.iloc[0,:] == group].iloc[1:,:].sum(axis = 1)
+        s = list(df.loc[:, df.iloc[0,:] == group].iloc[1:,:].sum(axis = 1))
         groupsums.append(s)
-    data = pd.DataFrame(groupsums, columns = list(groups))
-    G = nx.from_pandas_edgelist(network, "Oc", "Ot", "Interaction", create_using = nx.DiGraph())
+    data = pd.DataFrame(np.column_stack(groupsums), columns = list(groups))
+    print(network)
+    G = nx.from_pandas_edgelist(network, 'source', 'target', 'color', create_using = nx.DiGraph)
     pos = nx.circular_layout(G)
     color_map = []
+    low_abund = list()
     for node in G:
         abund = data.iloc[int(node)-1,:]
         if (abund[0] > 0.01) & (abund[1] > 0.01):
@@ -231,16 +231,19 @@ def draw_network(df, design, network):
             color_map.append('#FF6DB6')
         elif (abund[1] > 0.01):
             color_map.append('#009292')
-    nx.draw(G, pos, with_labels=True, font_weight='bold', node_color='#A0CBE2', node_size = 3000, edge_color=network["Interaction"],
-        width=4, edge_cmap=plt.cm.Blues)
-    #plt.tight_layout()
+        else:
+            low_abund.append(node)
+    if len(low_abund) > 0:
+        [G.remove_node(node) for node in low_abund]
+    colors = [G[u][v]['color'] for u,v in G.edges()]
+    nx.draw(G, pos, with_labels=True, font_weight='bold', node_color=color_map, node_size = 3000, edge_color = colors, width = 4, edge_cmap = plt.cm.Blues)
     plt.savefig("network.png", format="PNG")
     print("end draw_network")
 
 # In[ ]:
 
 
-def main(file, L = 3.8, oligo = "False"):
+def main(file, design, L = 3.8, oligo = "False"):
     df = format_file(file, oligo)
     print("STEP 1 DONE")
     triplet_df = triplets(df)
