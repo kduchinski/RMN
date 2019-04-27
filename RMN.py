@@ -220,7 +220,6 @@ def draw_network(df, designFile, network):
     data = pd.DataFrame(np.column_stack(groupsums), columns = list(groups))
     print(network)
     G = nx.from_pandas_edgelist(network, 'source', 'target', 'color', create_using = nx.DiGraph)
-    pos = nx.circular_layout(G)
     color_map = []
     low_abund = list()
     for node in G:
@@ -236,6 +235,7 @@ def draw_network(df, designFile, network):
     if len(low_abund) > 0:
         [G.remove_node(node) for node in low_abund]
     colors = [G[u][v]['color'] for u,v in G.edges()]
+    pos = nx.circular_layout(G)
     nx.draw(G, pos, with_labels=True, font_weight='bold', node_color=color_map, node_size = 3000, edge_color = colors, width = 4, edge_cmap = plt.cm.Blues)
     plt.savefig("network.png", format="PNG")
     print("end draw_network")
