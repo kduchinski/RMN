@@ -59,9 +59,9 @@ def format_oligo(file):
     #if("numOtus" in df.columns):
     #    df = df.drop(["numOtus"], axis = 1)
     df = df.transpose()
-    #df.insert(0, "Oligotype", list(df.index))
+    df.insert(0, "Oligotype", list(df.index))
     df.index = range(0, len(df.index))
-    df.iloc[1:,:] = df.iloc[1:,:]/100
+    df.iloc[1:,1:] = df.iloc[1:,1:]/100
     print("end format_oligo")
 
     return df
@@ -109,8 +109,8 @@ def predict_SRP(df):
     for row in range(0, len(p.index)):
         m_index = p.iloc[row, 0]
         c_index = p.iloc[row, 1]
-        m_list = df.iloc[m_index, :]
-        c_list = df.iloc[c_index, :]
+        m_list = df.iloc[m_index, 1:]
+        c_list = df.iloc[c_index, 1:]
         exp_SRP = list()
         for i in range(0, len(m_list)):
             exp_SRP.append(SRP_model(m_list[i], c_list[i]))
@@ -128,7 +128,7 @@ def predict_SRP(df):
 def lack_of_fit(df, triplet_df, skip = -1):
     print("start lack_of_fit")
     exp = predict_SRP(df)
-    obs = df.iloc[list(triplet_df["Ot"]),:].reset_index(drop=True)
+    obs = df.iloc[list(triplet_df["Ot"]),1:].reset_index(drop=True)
     
     if(skip != -1):
         df = df.drop(df.columns[skip], axis=1)
@@ -142,7 +142,7 @@ def lack_of_fit(df, triplet_df, skip = -1):
     sse_df.columns = list(range(1,len(sse_df.columns)+1))
 
     
-    avg_SRP = df.iloc[1:,:].mean(axis=1)
+    avg_SRP = df.iloc[1:,1:].mean(axis=1)
     sqdev_df = obs.subtract(list(avg_SRP[list(triplet_df["Ot"])]), axis=0)**2
 
     
@@ -212,18 +212,19 @@ def draw_network(df, designFile, network):
     design = pd.read_csv(designFile, sep = "\t")
     design = dict(zip(design.iloc[:,0], design.iloc[:,1]))
     df.iloc[0,:] = df.iloc[0,:].replace(design, regex = True)
-    groups = df.iloc[0,:].unique()
+    groups = df.iloc[0,1:].unique()
     groupsums = list()
     for group in groups:
-        s = list(df.loc[:, df.iloc[0,:] == group].iloc[1:,:].sum(axis = 1))
+        s = list(df.loc[1:, df.iloc[0,:] == group].iloc[1:,1:].sum(axis = 1))
         groupsums.append(s)
     data = pd.DataFrame(np.column_stack(groupsums), columns = list(groups))
     print(network)
+    otu_label_map = {k: v for k, v in zip(df.index[1:], df.iloc[1:,0])}
     G = nx.from_pandas_edgelist(network, 'source', 'target', 'color', create_using = nx.DiGraph)
     color_map = []
     low_abund = list()
     for node in G:
-        abund = data.iloc[int(node)-1,:]
+        abund = data.iloc[int(node)-2,:]
         if (abund[0] > 0.01) & (abund[1] > 0.01):
             color_map.append('#B66DFF')
         elif (abund[0] > 0.01):
@@ -235,6 +236,7 @@ def draw_network(df, designFile, network):
     if len(low_abund) > 0:
         [G.remove_node(node) for node in low_abund]
     colors = [G[u][v]['color'] for u,v in G.edges()]
+    G = nx.relabel_nodes(G, otu_label_map)
     pos = nx.circular_layout(G)
     nx.draw(G, pos, with_labels=True, font_weight='bold', node_color=color_map, node_size = 3000, edge_color = colors, width = 4, edge_cmap = plt.cm.Blues)
     plt.savefig("network.png", format="PNG")
