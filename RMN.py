@@ -35,7 +35,7 @@ import csv
 
 def format_file(file, oligo = "False"):
     print("start format_file")
-    if(oligo in ["true", "True", "T", "1"]):
+    if(oligo.lower() in ["true", "t", "1"]):
         df = format_oligo(file)
     else:
         df = pd.read_csv(file, sep = "\t")
@@ -215,30 +215,30 @@ def draw_network(df, designFile, network):
     groups = df.iloc[0,1:].unique()
     groupsums = list()
     for group in groups:
-        s = list(df.loc[1:, df.iloc[0,:] == group].iloc[1:,1:].sum(axis = 1))
+        s = list(df.loc[1:, df.iloc[0,:] == group].sum(axis = 1))
         groupsums.append(s)
     data = pd.DataFrame(np.column_stack(groupsums), columns = list(groups))
     print(network)
     otu_label_map = {k: v for k, v in zip(df.index[1:], df.iloc[1:,0])}
     G = nx.from_pandas_edgelist(network, 'source', 'target', 'color', create_using = nx.DiGraph)
     color_map = []
-    low_abund = list()
-    for node in G:
-        abund = data.iloc[int(node)-2,:]
-        if (abund[0] > 0.01) & (abund[1] > 0.01):
-            color_map.append('#B66DFF')
-        elif (abund[0] > 0.01):
-            color_map.append('#FF6DB6')
-        elif (abund[1] > 0.01):
-            color_map.append('#009292')
-        else:
-            low_abund.append(node)
-    if len(low_abund) > 0:
-        [G.remove_node(node) for node in low_abund]
-    colors = [G[u][v]['color'] for u,v in G.edges()]
+    low_abund = list(data.index[data.max(axis = 1) < 0.01])
+    [G.remove_node(node) for node in low_abund]
+    data.drop(low_abund, inplace = True)
+    data.reset_index(inplace = True, drop = True)
+    group_colors = plt.get_cmap('Accent').colors[:len(groups)]
+    group_cmap = dict(zip(groups, np.asarray(group_colors)))
+    node_colors = [group_cmap[i] for i in data.idxmax(axis = 1)]
+    edge_colors = [G[u][v]['color'] for u,v in G.edges()]
     G = nx.relabel_nodes(G, otu_label_map)
     pos = nx.circular_layout(G)
+    size = max(10, len(G.nodes)/2))
+    f = plt.figure(1, figsize = (size, size))
+    ax = f.add_subplot(1,1,1)
+    for label in group_cmap:
+        ax.plot([0], [0], color = group_cmap[label], label = label)
     nx.draw(G, pos, with_labels=True, font_weight='bold', node_color=color_map, node_size = 3000, edge_color = colors, width = 4, edge_cmap = plt.cm.Blues)
+    plt.legend(fontsize = 20, title = "Highest Abundance", title_fontsize = 20)
     plt.savefig("network.png", format="PNG")
     print("end draw_network")
 
